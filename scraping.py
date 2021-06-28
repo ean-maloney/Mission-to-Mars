@@ -3,54 +3,125 @@ from splinter import Browser
 from bs4 import BeautifulSoup as soup
 from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
+import datetime as dt
 
-executable_path = {'executable_path': ChromeDriverManager().install()}
-browser = Browser('chrome', **executable_path, headless = False)
+def scrape_all():
+    #Initiate headless driver
+    executable_path = {'executable_path': ChromeDriverManager().install()}
+    browser = Browser('chrome', **executable_path, headless = False)
 
-#Visit site
-url = 'https://redplanetscience.com'
-browser.visit(url)
-browser.is_element_present_by_css('div.list_text', wait_time = 1)
+    news_title, news_paragraph = mars_news(browser)
 
-html = browser.html
-news_soup = soup(html, 'html.parser')
-slide_elem = news_soup.select_one('div.list_text')
+    #Store data from scraping funcs in dict
+    data = {"news_title": news_title,
+            "news_paragraph": news_paragraph,
+            "featured_image": featured_image(browser),
+            "facts": mars_facts(),
+            "last_modified": dt.datetime.now(),
+            "hemispheres": scrape_hemispheres(browser)}
 
-slide_elem.find('div', class_ = 'content_title')
+    browser.quit()
+    return(data)
 
-#Use parent elem to find first 'a' tag and save
-news_title = slide_elem.find('div', class_ = 'content_title').get_text()
-news_title
+def mars_news(browser):
+    #Visit site
+    url = 'https://redplanetscience.com'
+    browser.visit(url)
+    browser.is_element_present_by_css('div.list_text', wait_time = 1)
 
-#Use parent to find text
-news_p = slide_elem.find('div', class_ = 'article_teaser_body').get_text()
-news_p
+    html = browser.html
+    news_soup = soup(html, 'html.parser')
+
+    #t/e block
+    try: 
+        slide_elem = news_soup.select_one('div.list_text')
+
+        #Use parent elem to find first 'a' tag and save
+        news_title = slide_elem.find('div', class_ = 'content_title').get_text()
+
+        #Use parent to find text
+        news_p = slide_elem.find('div', class_ = 'article_teaser_body').get_text()
+
+    except AttributeError:
+        return(None, None)
+
+    return(news_title, news_p)
 
 ### Featured Image
+def featured_image(browser):
+    #Visit image url
+    url = 'https://spaceimages-mars.com'
+    browser.visit(url)
 
-#Visit image url
-url = 'https://spaceimages-mars.com'
-browser.visit(url)
+    #Find and click the full image button
+    full_image_elem = browser.find_by_tag('button')[1]
+    full_image_elem.click()
 
-#Find and click the full image button
-full_image_elem = browser.find_by_tag('button')[1]
-full_image_elem.click()
+    #Parse resulting html with soup
+    html = browser.html
+    img_soup = soup(html, 'html.parser')
 
-#Parse resulting html with soup
-html = browser.html
-img_soup = soup(html, 'html.parser')
+    #t/e block
+    try:
+        #Find relative image url
+        img_url_rel = img_soup.find('img', class_ = 'fancybox-image').get('src')
 
-#Find relative image url
-img_url_rel = img_soup.find('img', class_ = 'fancybox-image').get('src')
-img_url_rel
+    except AttributeError:
+        return(None)
 
-#Use the base URL to create an absolute URL
-img_url = f'https://spaceimages-mars.com/{img_url_rel}'
-img_url
+    #Use the base URL to create an absolute URL
+    img_url = f'https://spaceimages-mars.com/{img_url_rel}'
+    
+    return(img_url)
 
-df = pd.read_html('https://galaxyfacts-mars.com')[0]
-df.columns = ['description', 'Mars', 'Earth']
-df.set_index('description', inplace = True)
-df.to_html()
+def mars_facts():
+    #t/e block
+    try:
+        df = pd.read_html('https://galaxyfacts-mars.com')[0]
 
-browser.quit()
+    except BaseException:
+        return(None)
+
+    df.columns = ['description', 'Mars', 'Earth']
+    df.set_index('description', inplace = True)
+    
+    return(df.to_html())
+
+def scrape_hemispheres(browser):
+    # 1. Use browser to visit the URL 
+    url = 'https://marshemispheres.com/'
+
+    browser.visit(url)
+
+    # 2. Create a list to hold the images and titles.
+    hemisphere_image_urls = []
+
+    # 3. Write code to retrieve the image urls and titles for each hemisphere.
+    i = 0
+
+    while i < 4:
+        browser.visit(url)
+        full_image_elem = browser.find_by_tag('h3')[i]
+        full_image_elem.click()
+        
+        html = browser.html
+        img_soup = soup(html, 'html.parser')
+        
+        img_url_rel = img_soup.find('img', class_='wide-image').get('src')
+        img_url = f'{url}{img_url_rel}'
+        
+        caption = img_soup.find('h2', class_='title').get_text()
+        
+        dict_ = {}
+        dict_['image_url'] = img_url
+        #https://stackoverflow.com/questions/6416131/add-a-new-item-to-a-dictionary-in-python
+        dict_['caption'] = caption
+        
+        hemisphere_image_urls.append(dict_)
+        
+        i += 1
+    
+    return(hemisphere_image_urls)
+
+if __name__ == "__main__":
+    print(scrape_all())
